@@ -1,0 +1,436 @@
+---
+title: "STA207 Final Project"
+author: "Sixue Cheng"
+date: "3/10/2022"
+output:
+  html_document: 
+    df_print: paged
+    number_sections: yes
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Background
+In the end of 2019, a world-changing pandemic occurred and is still spreading, affecting countries and people around the world. The COVID-19 epidemic has brought a lot of impacts on us in many aspect: many people died in the pandemic, a lot of people get unemployed, economic downturn, high cost of health care,  a lot of palce shutdown, our way of life has changed a lot during this period, etc. Rather than wishing the pandemic had never happened, we should reflect on what has happened in this pandemic to learn from what we could do when facing such situation, and perhaps what we can do to mitigate the damage.
+
+# Introduction
+
+Since COVID-19 breakout and stay-at-home order, we can not be outdoor for restaurants, which, in turn, caused
+a rush in purchasing necessities of life. This action by people is very likely to cause volatility in the grocery commodities price. Also from my personal experience and feeling in this pandemic, our cost of living has increased a lot, especially when it comes to food. In this report, I want to using COVID-19 related data along with the grocery commodities price data, analyze whether COVID-19 has any impact on grocery goods price.
+
+# Project goal
+Analyzing whether COVID-19 has impact on grocery commodities, specifically beef price through descriptive analysis and statistical inference analysis.
+Evaluate what aspects will affect beef wholesale price, and evaluate their association effect.
+
+# Introduction of data
+
+## WHO COVID-19 Data
+First, We will explore the WHO COVID-19 data. This data set is maintained by WHO and updated constantly.
+```{r import covid-19 data, echo = FALSE, purl=TRUE, warning=FALSE, message=FALSE}
+library(tidyverse, quietly = T)
+library(gplots, quietly = T)
+library("readxl", quietly = T)
+covid <- read_csv("https://covid19.who.int/WHO-COVID-19-global-data.csv", show_col_types = FALSE)
+```
+
+
+```{r process covid data, echo = FALSE, purl=TRUE, warning=FALSE}
+covid <- covid %>%filter(WHO_region != "Other") %>% 
+mutate(WHO_region = fct_recode(WHO_region,"Eastern Mediterranean"="EMRO","Europe" = "EURO","Africa" = "AFRO", "Western Pacific" = "WPRO","Americas"="AMRO","South-East Asia" = "SEARO"))
+
+covid_region <- covid %>% dplyr::select(Date_reported,WHO_region,New_cases,Cumulative_cases,New_deaths,Cumulative_deaths) %>% group_by(Date_reported, WHO_region) %>% summarise_each(funs(sum))
+```
+
+
+```{r covid viz, echo = FALSE, purl=TRUE, warning=FALSE}
+ggplot(covid_region, aes(x = Date_reported, y = New_cases)) +
+  geom_line(aes(color = WHO_region))+
+  scale_x_continuous(breaks = pretty(covid_region$Date_reported, n = 12)) +
+  guides(color="none") +
+  labs(x = "Date reported", y = "New cases",color='WHO region')
+
+ggplot(covid_region, aes(x = Date_reported, y = Cumulative_cases)) +
+  geom_line(aes(color = WHO_region)) +
+  scale_x_continuous(breaks = pretty(covid_region$Date_reported, n = 12)) +
+  guides(color="none") +
+  labs(x = "Date reported", y = "New deaths",color='WHO region')
+```
+<br>
+From the plots above, we can see that Americas has most new cases and new deaths till the beginning of 2022, which indicate that the countries in this region could be a prefect sample to preform analysis on my topic of interest.
+
+```{r covid AMER, echo=FALSE, purl=TRUE}
+max_date <- max(covid$Date_reported)
+covid_max_date <- covid[covid$Date_reported == max_date,]
+covid_max_date_AMRO <- covid_max_date[covid_max_date$WHO_region == "Americas",]
+covid_max_date_AMRO <- covid_max_date_AMRO[,c(2,6)]
+covid_max_date_AMRO$Cumulative_cases <- as.double(covid_max_date_AMRO$Cumulative_cases)
+barplot(covid_max_date_AMRO$Cumulative_cases,names.arg = covid_max_date_AMRO$Country_code, las = 2, cex.name=0.5, xlab="Country Code",ylab="Cumulative Cases",col="blue", main="Cumulative cases in Americas")
+```
+<br>
+Since United States of America have largest cumulative cases and cumulative deaths in the Americas Region. Obviously, it's very likely that COVID-19 will bring a lot of impact to this country. 
+```{r meat consumption, echo=FALSE, purl=TRUE}
+meat.consumption <- read.csv(file = 'per-capita-meat-type.csv')
+meat.consumption <- meat.consumption[meat.consumption$Year == 2017,][, c(2,4)]
+colnames(meat.consumption) <- c("Country_code", "Beef_consumption")
+meat.consumption <- meat.consumption[order(-meat.consumption$Beef_consumption),][1:10,]
+barplot(meat.consumption$Beef_consumption,names.arg = meat.consumption$Country_code, las = 2, xlab="Country Code",ylab="Beef Consumption",col="mediumpurple", main="Top beef consumption country bar plot")
+```
+<br>
+From the plot above, we can see United States is a large beef consumption country. Since my interests is analyzing the COVID-19 impact on beef price, The United States has largest cumulative cases around the world and top 10 beef consumption around the world, which indicates that The United States could be a prefect sample to preform my analysis.
+<br>
+In the following, I extract the United States data from the COVID data set, and review the background of the corona virus pandemic.
+```{r COVID cumulative plot, echo=FALSE, purl=TRUE}
+covid_US <- covid[covid$Country == "United States of America",]
+covid_US <- covid_US[, c(1,5,6,7,8)]
+
+par(mar=c(5, 4, 4, 6) + 0.1)
+## Plot cumulative cases data and draw its axis
+plot(covid_US$Date_reported, covid_US$Cumulative_cases, axes=FALSE, ylim=c(0,8e+07), xlab="", ylab="", type="l",col="red", main="Cumulative cases and deaths data")
+axis(2, ylim=c(0,6e+08),col="red",las=1)  ## las=1 makes horizontal labels
+mtext("cumulative cases",side=2,line=2.5)
+box()
+par(new=TRUE)
+
+## Plot the cumulative deaths data and put axis scale on right
+plot(covid_US$Date_reported, covid_US$Cumulative_deaths, xlab="", ylab="", ylim=c(0,1e+06), 
+    axes=FALSE, type="l", col="lightgreen")
+## a little farther out (line=4) to make room for labels
+mtext("cumulative deaths",side=4,col="black",line=4) 
+axis(4, ylim=c(0,1e+06), col="black",col.axis="black",las=1)
+
+## Draw the time axis
+mtext("Date",side=1,col="black",line=2.5)  
+
+## Add Legend
+legend("topleft",legend=c("Cumulative Cases","Cumulative Deaths"),
+  text.col=c("red","lightgreen"),pch=c(16,15),col=c("red","lightgreen"))
+```
+
+```{r new plot, echo=FALSE, purl=TRUE}
+par(mar=c(5, 4, 4, 6) + 0.1)
+
+plot(covid_US$Date_reported, covid_US$New_cases, axes=FALSE, ylim=c(0,1.5e+06), xlab="", ylab="", type="l",col="blue", main="New cases and deaths data")
+axis(2, ylim=c(0,1.5e+06),col="blue",las=1)  
+mtext("new cases",side=2,line=2.5)
+box()
+par(new=TRUE)
+
+plot(covid_US$Date_reported, covid_US$New_deaths, xlab="", ylab="", ylim=c(0,4000), 
+    axes=FALSE, type="l", col="yellow")
+
+mtext("new deaths",side=4,col="black",line=4) 
+axis(4, ylim=c(0,4000), col="black",col.axis="black",las=1)
+
+mtext("Date",side=1,col="black",line=2.5)  
+
+legend("topleft",legend=c("New Cases","New Deaths"),
+  text.col=c("blue","yellow"),pch=c(16,15),col=c("blue","yellow"))
+```
+<br>
+Since there are 4 variables can represent COVID-19 situation, which are cumulative cases, cumulative deaths, new cases and new death. However, I think new cases could be a prefect variable to represent the COVID-19 situation, the more cases means more severe COVID-19 pandemic. I decided to use new cases variable for the data represent COVID-19.
+
+## Grocery Commodities Data:
+### Wholesale price
+There are a lot of wholesale meat price in this data set, for the sake of convenience, I decided to select "Choice 1-3, 600 - 900 lbs." price to analyze. The reason I chose this variable is this kind of meat is most common in the grocery store, it align with my target that finding the COVID-19 impact on our life. In the original data set, this price is the first column. This data is the response variable of my model.
+```{r import wholesale, echo=FALSE, purl=TRUE}
+Wholesale <- read_excel("WholesalePrices.xlsx", sheet = "Historical", skip = 3)
+Wholesale <- Wholesale[,c(1,2)]
+colnames(Wholesale) <- c("Period", "wholesale_price")
+# In the following, I combined data from current sheet with data from historical sheet. By manually checking, I added January 2022 live cattle price to my live stock price data.
+Jan_data <- data.frame(as.Date("2022-01-01"), 279.75) 
+names(Jan_data) <- c("Period", "wholesale_price")  
+whole_sale <- rbind(Wholesale, Jan_data)
+```
+<br>
+
+### Live stock cattle price
+Live stock cattle price is the purchasing cost of beef, and the merchants and grocery stores could decide the wholesale price based on their purchasing cost, which means it's obvious live stock cattle price is related to wholesale price. Since there are 7 cattle price in the original data set, the only difference is the quality of the cattle, I decide to use average of live stock cattle price to represent live stock price.
+```{r import live stock, echo=FALSE, purl=TRUE, warning=FALSE}
+Livestock <- read_excel("LivestockPrices.xlsx", sheet = "Historical", skip = 3)
+Livestock <- Livestock[,1:8]
+colnames(Livestock) <- c("date", "price1","price2","price3","price4","price5","price6","price7")
+
+Livestock$price1 <- as.double(Livestock$price1)
+Livestock$price2 <- as.double(Livestock$price2)
+Livestock$price3 <- as.double(Livestock$price3)
+Livestock$price4 <- as.double(Livestock$price4)
+Livestock$price5 <- as.double(Livestock$price5)
+Livestock$price6 <- as.double(Livestock$price6)
+Livestock$price7 <- as.double(Livestock$price7)
+
+Livestock$cattle_price <- rowMeans(Livestock[,2:8], na.rm = T)
+Livestock <- Livestock[,c(1,9)]
+# In the following, I combined data from current sheet with data from historical sheet. By manually checking, I added January 2022 live cattle price to my live stock price data.
+Jan<- c(136.75,196.00,173.75,158.25,168.50,148.75)
+Jan<- mean(Jan)
+Jan_data <- data.frame(as.Date("2022-01-01"), Jan) 
+names(Jan_data) <- c("date", "cattle_price")  
+Live_stock <- rbind(Livestock, Jan_data) 
+Live_stock <- Live_stock[Live_stock$date > "2019-12-01",]
+```
+<br>
+
+### Government Stringency Index
+The COVID-19 does not directly impact price. However, the government will response to COVID-19 situation. In the United States, the government issued a lot policies in the COVID-19 pandemic, such as stay-at-home order, the worker who got illness could go to work, etc. Stay-at-home order made people panic, as a result, stocked up their daily supply. Since a lot of people try to purchase goods at the same time, while the supply chain could not follow up such high demand in short time, which caused the instability of wholesale price. Also, the policy that workers got illness could go to work caused a shortage of workers in supply chain, fewer people could slaughter cattle, box and ship cattle. To some extent, this will result instability in the wholesale price. Based on those reasons, the Government Stringency Index could be a related variable to wholesale price data.
+```{r import stringency index, echo=FALSE, purl=TRUE}
+govern <- read.csv(file = "covid-stringency-index.csv")
+govern <-govern[govern$Code == "USA",]
+govern <- govern[,3:4]
+# Since my the price data is monthly collect, I will also monthly select stringency_index data.
+govern <- dplyr::filter(govern, grepl("01-01|02-01|03-01|04-01|05-01|06-01|07-01|08-01|09-01|10-01|11-01|12-01", Day))
+# 2020-01-01 data is missing, since 2020-02-01's stringency_index is 0, we can simply fill this month's stringency_index with 0.
+J <- data.frame("2020-01-01", 0.00) 
+names(J) <- c("Day", "stringency_index") 
+govern <- rbind(J, govern) 
+# Also since we only have price data till the Jan 2022, we will not include Feb 2022 data.
+govern <- govern[1:25,]
+colnames(govern) <- c("date", "stringency_index")
+govern$date <- as.Date(govern$date)
+```
+
+# Descriptive Analysis
+Since our data is time sensitive, instead of using histogram plot, I decided to use line plot for visualization in descriptive analysis.
+```{r process US covid-1, echo=FALSE, purl=TRUE}
+# We will only using New Case Variable to represent the COVID-19 situation
+covid_US_NC <- covid_US[, c(1,2)]
+#Since the beef price data is monthly, we will also apply monthly date on COVID case data.
+covid_US_NC[,1] <- substr(covid_US_NC$Date_reported, 1, 7)
+covid_US_NC <- aggregate(New_cases~Date_reported,data=covid_US_NC,sum)
+#Create cum sum
+covid_US_NC$New_cases <- cumsum(covid_US_NC$New_cases)
+covid_US_NC$Date_reported <- as.Date(paste(covid_US_NC$Date_reported, "-01", sep = ""))
+plot(covid_US_NC$New_cases~covid_US_NC$Date_reported, type = "l", col = 'lightblue', lwd = 3, ylab = "New Cases", xlab = "Date", main = "New cases line plot")
+```
+<br>
+From the plot of new cases respect to date, we can see there is an obvious increasing trend of number of new cases.
+<br>
+Since the beef price data only contains data till 2022-01-01, the COVID-19 data only contains data after 2020-01-01, we will apply the same time range for both data set.
+<br>
+```{r process US covid-2, echo=FALSE, purl=TRUE}
+covid_US_NC <- covid_US_NC[covid_US_NC$Date_reported < "2022-02-01",]
+colnames(covid_US_NC) <- c("date", "New_cases")
+
+whole_sale_after <- whole_sale[whole_sale$Period > "2019-12-01", ]
+plot(whole_sale_after$wholesale_price~ whole_sale_after$Period, type = "l", xlab = 'Period', ylab = 'monthly wholesale price', col = 'mediumpurple2', main  = "The trend of wholesale beef price")
+```
+<br>
+Average, mean, median, max and min in wholesale beef price and COVID-19 new cases in the United States, and correlation between those two variables.
+```{r new cases and wholesale summary, echo=FALSE, purl=TRUE}
+colnames(whole_sale_after) <- c("date", "wholesale_price")
+whole_sale_after$date <- as.Date(whole_sale_after$date, format="%Y-/%m-/%d")
+whole_sale_after$wholesale_price <- as.double(whole_sale_after$wholesale_price)
+ws <- merge(covid_US_NC, whole_sale_after[,c(1,2)],by="date")
+summary(ws[,2:3])
+cor(ws[, 2:3])
+```
+<br>
+From the correlation of COVID-19 new cases and price data, we can see that the severity of COVID-19 situation could not explain the wholesale price change. To interpret this result, I think the COVID-19 situation will not directly impact the wholesale price of beef. In the following is the line plot of both new cases data and wholesale price data.
+<br>
+```{r wholesale and new cases plot, echo=FALSE, purl=TRUE}
+par(mar=c(5, 4, 4, 6) + 0.1)
+plot(ws$date, ws$New_cases, pch=16, axes=FALSE, ylim=c(0,6e+07), xlab="", ylab="", type="b",col="red", main="Wholesale and Covid data")
+axis(2, ylim=c(0,6e+07),col="red",las=1) 
+mtext("New Cases",side=2,line=2.5)
+box()
+par(new=TRUE)
+
+plot(ws$date, ws$wholesale_price, pch=15,  xlab="", ylab="", ylim=c(195,410), 
+    axes=FALSE, type="b", col="lightgreen")
+
+mtext("Price Trend",side=4,col="black",line=4) 
+axis(4, ylim=c(195,410), col="black",col.axis="black",las=1)
+
+mtext("Date",side=1,col="black",line=2.5)  
+
+legend("bottomright",legend=c("New Cases","Price Trend"),
+  text.col=c("red","lightgreen"),pch=c(16,15),col=c("red","lightgreen"))
+```
+<br>
+We can see that the new cases are steadily rising, while there is some volatility in wholesale price trend.
+
+```{r merge live stock and stringency index data, echo=FALSE, purl=TRUE}
+Live_stock$date <- as.Date(Live_stock$date)
+data <- merge(ws, Live_stock,by="date")
+data.new <- merge(data, govern,by="date")
+#Now we have cleaned data, we could eliminate date variable from the data frame
+df <- data.new[,2:5]
+df <- df[,c(2,3,4,1)] 
+```
+
+
+Summary Statistics of all variables
+```{r summary stats and correlation and scatter plot, echo=FALSE,purl=TRUE}
+#summary statistics
+summary(df)
+#scatter plot matrix with lower panel correlation
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+  usr <- par("usr")
+  on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- abs(cor(x, y, use = "complete.obs"))
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste(prefix, txt, sep = "")
+  if (missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex =  cex.cor * (1 + r) / 2)
+}
+
+
+pairs(df,  col = 'steelblue', cex = 1, panel = panel.smooth, lower.panel = panel.cor, main = "scatter plot and correlation")
+```
+<br>
+From the correlation matrix, we can see that except `cattle price` and `new cases` has pretty high correlation
+with other explanatory variables. `Live stock cattle price` and `government stringency index` shows high linear relationship with `wholesale price` data.
+
+The line plot of all variables
+```{r line plot, echo=FALSE,purl=TRUE, warning=FALSE}
+par(mfrow = c(2,2))
+for (i in 1:4) {
+  plot(df[,i], main = paste('Line plot of', colnames(df[i]), sep = ' '), xlab = colnames(df[i]), col = 'steelblue', type = "l", pwd = 3)
+}
+```
+<br>
+# Inference Analysis
+My goal is evaluating how much the `wholesale price`(Y) changes could be explained by COVID-19 situation, basically live `cattle price`(X1) and `government stringency index`(X2), `new cases`(X3) in the United States. To achieve my goal, I decided to use Linear Regression with least squares estimation of the model parameters.
+The model is: ${Y = X\beta+\epsilon = \beta_0 +\beta_1X_1 + \beta_2X_2+\beta_3X_3+\epsilon'}$
+```{r original fit, echo=FALSE,purl=TRUE}
+lm.fit <- lm(wholesale_price~cattle_price + stringency_index + New_cases, data = df)
+summary(lm.fit)
+```
+<br>
+By the experimental fit on the data, the result is not ideal, it shows there are no all of the predictive variables are not significant in explaining the wholesale price, which does not align with my pre-assumption. However, when I investigating the response variable, I find out that at the beginning period of COVID-19, the wholesale data has a really sharp and abnormal rising and falling. Looking back at my personal experience during that time, I don't think this Abnormal fluctuation cannot be quantified with the data I had. At that time, a lot of people are panic, and they rushed to the stores to stock up on groceries and food, at the same time, the original supply chain can't handle such demand, and at the same time, people in the supply chain are sick and unable to work, which makes it even harder to meet the demand. Accordingly, an fluctuation happened. This fluctuation cannot be explained by any linear relationship. The following plot shows the abnormal fluctuation in the wholesale price data.
+<br>
+```{r wholesale and live stock, echo=FALSE,purl=TRUE}
+par(mar=c(5, 4, 4, 6))
+## Plot cumulative cases data and draw its axis
+plot(df$wholesale_price, axes=FALSE, ylim=c(195,410), xlab="", ylab="",pch = 16, type="b",col="red", main="Wholesale price and live stock price during COVID-19")
+axis(2, ylim=c(195,410),col="red",las=1)  ## las=1 makes horizontal labels
+mtext("Wholesale price",col = 'red',side=2,line=2.5)
+box()
+par(new=TRUE)
+
+plot(df$cattle_price, xlab="", ylab="",pch = 15, ylim=c(125,170), axes=FALSE, type="b", col="lightgreen")
+
+mtext("Livestock Price",side=4,col="lightgreen",line=4) 
+axis(4, ylim=c(125,170), col="black",col.axis="black",las=1)
+
+## Draw the time axis
+mtext("Month",side=1,col="black",line=2.5)  
+
+## Add Legend
+legend("bottomright",legend=c("Wholesale price","Live Stock Price"),
+  text.col=c("red","lightgreen"),pch=c(16,15),col=c("red","lightgreen"))
+```
+<br>
+To combat this, I decided to eliminate data from the first few months of the epidemic and focus on data from the plateau-phase of COVID-19, and fit the model again.
+```{r new dataframe, echo=FALSE,purl=TRUE}
+df.new <- data.new[data.new$date > "2020-06-01",2:5]
+df.new <- df.new[,c(2,3,4,1)]
+```
+
+
+```{r new fit1, echo=FALSE,purl=TRUE}
+lm.fit.new <- lm(wholesale_price~cattle_price + stringency_index + New_cases, data = df.new)
+summary(lm.fit.new)
+```
+<br>
+From the result of new fit, we can see that the result is still not good, no explanatory variables are significant in explaining dependent variables. I consider to scale the explanatory variables, and fit the model again.
+
+
+```{r scale and fit, echo=FALSE,purl=TRUE}
+df.scale <- df.new
+df.scale[,2:4] <- scale(df.scale[,2:4])
+fit.scale <- lm(wholesale_price~cattle_price + stringency_index + New_cases, data = df.scale)
+```
+
+```{r summary scale fit, echo=FALSE, purl=TRUE}
+summary(fit.scale)
+anova(fit.scale)
+```
+<br>
+From statistics in Analysis of variance table, we can see that `New cases` of COVID-19 in the United States does not affect sum of square a lot, also associated p-value is pretty high. We could drop new cases variable, and refit the model again.
+
+```{r}
+fit.scale.new <- lm(wholesale_price~cattle_price + stringency_index, data = df.new)
+car::vif(fit.scale.new)
+```
+<br>
+The Statistics shows that the VIF between live stock cattle price and stringency index are moderate, it means we do not need to worry about multicollinearity between explanatory variables. Let's check the result of this model.
+
+```{r}
+summary(fit.scale.new)
+```
+<br>
+From the summary statistics of linear regression model, we can see that `live stock cattle price` have positive relationship with `beef wholesale price`, basically 1 unit of increasing in `live stock cattle price` will cause an `1.6107` units of increasing in beef wholesale price. And also `p-value` associated with this coefficient is `0.0124`, which is less than common significant level `0.05`, it tells us that this variable is deemed as significant in `wholesale price change`. when it comes to `stringency index` from government, the coefficient is `-1.2430`, which means an `one` unit increasing in stringency index will cause `1.2430` units of decreasing in wholesale price. however, there is one thing we should notice about this coefficient: the associated `p-value` is `0.0730`, while it is moderate in some degree, it's over 0.05, the common significant level, which indicates that we are not so confident that this variable can help explaining the variance within our dependent variable. 
+
+# Sensitive Analysis:
+```{r}
+summary(df.new$wholesale_price - fit.scale.new$fitted.values)
+par(mfrow = c(2,2))
+plot(fit.scale.new)
+```
+<br>
+The median value of residuals is centered around 0, this would tell us our residuals were somewhat symmetrical and that our model was predicting kind of evenly. In the quantile-quantile plot(Normal Q-Q plot), all the points are roughly going along with the dot line. Overall the residuals look to have a fairly normal distribution from Q-Q plot. From Residuals vs Fitted plot and scale-location plot, we can see that this model does not a prefect model for our data. I think the reason is that we only have 19 observation, the model could be as accurate as we want. In conclusion, this fitted model still be a moderate model to help us explaining the changes in dependent variable - `beef wholesale price`.
+
+Causal Inference:
+From the data I had, it seems like we have a chance to conduct causal inference analysis, because I have the wholesale price data before and after COVID-19. However, I cannot separate the dataa into treatment group and control group. When COVID-19 happened, everyone and everything in this world are forced to face this pandemic, nothing could be excluded. The causal inference without treatment group and control group are not rigorous, so I cannot conduct statistical causal inference.
+In the following, I will shows the price trend before COVID-19 and after COVID-19.
+```{r}
+whole_sale_before <- whole_sale[whole_sale$Period > "2017-12-01" & whole_sale$Period < "2020-01-01",]
+colnames(whole_sale_before) <- c("date", "wholesale_price", "increasing")
+whole_sale_before$date <- as.Date(whole_sale_before$date)
+whole_sale_before$wholesale_price <- as.double(whole_sale_before$wholesale_price)
+```
+
+```{r}
+par(mar=c(5, 4, 4, 6))
+## Plot cumulative cases data and draw its axis
+plot(whole_sale_before$date, whole_sale_before$wholesale_price, axes=FALSE, ylim=c(180,300), xlab="", ylab="",pch = 16, type="b",col="red", main="Wholesale price before and after COVID-19")
+axis(2, ylim=c(180,300),col="red",las=1)  ## las=1 makes horizontal labels
+mtext("Before COVID-19",col = 'red',side=2,line=2.5)
+box()
+par(new=TRUE)
+
+## Plot the cumulative deaths data and put axis scale on right
+plot(whole_sale_after$date, whole_sale_after$wholesale_price, xlab="", ylab="",pch = 15, ylim=c(180,410), 
+     axes=FALSE, type="b", col="lightgreen")
+## a little farther out (line=4) to make room for labels
+mtext("After COVID-19",side=4,col="green",line=4) 
+axis(4, ylim=c(180,410), col="black",col.axis="black",las=1)
+
+## Draw the time axis
+mtext("Month",side=1,col="black",line=2.5)  
+
+## Add Legend
+legend("bottomright",legend=c("Before COVID-19","After COVID-19"),
+  text.col=c("red","green"),pch=c(16,15),col=c("red","green"))
+```
+<br>
+From the plot above, price trend before and after COVID-19 roughly share the similar trend. However, April 2020 - July 2020 shows very abnormal pattern. Taking into account the epidemic, April 2020 is the start point of COVID-19 breakout in the United States, which align with the abnormal pattern.
+
+# Discussion
+My previous assumption is that COVID-19 did bring impact on grocery commodities price. However, from my analysis, the pandemic did have impact, but I think only at the beginning of COVID-19 pandemic. At the beginning of COVID-19 breakout, there is a really obvious fluctuation in the increasing of wholesale price, which cannot be evaluated by any variables within my data set. That period is a more complicated period，and with my current knowledge, I have no way to analyze the instability of that period. After 3 months of breakout, in July 2020, the epidemic plateaued, and everything returned to normal status. After that time, the only significant variable in explaining the wholesale price change is live stock price, basically the cost of stocking beef.
+In any case, the epidemic has affected us to varying degrees, the relevant authorities and ourselves can draw lessons from this experience.
+
+# Acknowledgement
+None
+
+# Code
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+
+```
+
+# Reference
+World Health Organization. Who Coronavirus(COVID-19)[Data]. Retrieved from https://covid19.who.int/
+
+U.S. DEPARTMENT OF AGRICULTURE Economic Research Service. Livestock and Meat Domestic Data[Data]. Retrieved from https://www.ers.usda.gov/data-products/livestock-and-meat-domestic-data/livestock-and-meat-domestic-data/#Wholesale%20Prices
+
+U.S. DEPARTMENT OF AGRICULTURE Economic Research Service. Wholesale and Meat Domestic Data[Data]. Retrieved from https://www.ers.usda.gov/data-products/livestock-and-meat-domestic-data/livestock-and-meat-domestic-data/#Wholesale%20Prices
+
+Our World in Data. Policy Responses to the Coronavirus Pandemic. Government Stringency Index[Data]. Retrieved from https://ourworldindata.org/covid-stringency-index
+
+Our World in Data. Per capita meat consumption by type, 2020[Data]. Retrived from https://ourworldindata.org/grapher/per-capita-meat-type?country=CHN~USA~IND~ARG~PRT~ETH~JPN~GBR~BRA
